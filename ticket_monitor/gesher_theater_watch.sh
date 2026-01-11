@@ -4,21 +4,10 @@ set -euo pipefail
 PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
 
 # Where to message you (must be reachable via iMessage on this Mac)
-IMESSAGE_BUDDY="<YOUR_APPLE_REGISTERED_EMAIL"
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-# Shows to monitor (find ShowID in the Gesher website URLs)
-# Add multiple shows by adding more IDs, use blank between IDs.
-SHOW_IDS=(
-  2839  # "Neshamot"
-)
-
-YEARS=(2026 2027)
-
-MONTH_START=1
+IMESSAGE_BUDDY="your.email@example.com"
+SHOW_IDS=(2839)  # Shows to monitor (find ShowID in the Gesher website URLs)
+YEARS=(2026 2027)  # Years to monitor, example: YEARS=(2026) or YEARS=(2026 2027)
+MONTH_START=3
 MONTH_END=12
 
 # Generate URLs from configuration
@@ -31,9 +20,9 @@ for show_id in "${SHOW_IDS[@]}"; do
   done
 done
 
-LOGFILE="$HOME/Library/Logs/gesher_watch_multi.log"
+LOGFILE="$HOME/Library/Logs/gesher_theater_watch.log"
 mkdir -p "$(dirname "$LOGFILE")"
-echo "$(date '+%Y-%m-%d %H:%M:%S') ran gesher_watch_multi" >> "$LOGFILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S') ran gesher_theater_watch" >> "$LOGFILE"
 
 STATE_DIR="$HOME/Library/Caches/gesher-watch"
 mkdir -p "$STATE_DIR"
@@ -50,25 +39,23 @@ APPLESCRIPT
 }
 
 extract_payload () {
-  # Count the number of available show dates (each show date has a span with the pattern: showname - date - id)
   local html="$1"
+  local shows
+  shows="$(printf "%s" "$html" | tr -d '\r' | grep -o '<span>[^<]*[0-9]\+\.[0-9]\+ - [0-9]\+</span>' | sed 's/ - [0-9].*//' | sed 's/<span>//' | sort -u | tr '\n' '|')"
 
-  # Count show date entries in the format: <span>show - DD.M - ID</span>
-  local count
-  count="$(printf "%s" "$html" | tr -d '\r' | grep -o '<span>[^<]*[0-9]\+\.[0-9]\+ - [0-9]\+</span>' | wc -l | tr -d ' ')"
-
-  if [[ -n "$count" && "$count" -gt 0 ]]; then
-    # Return just the count - this represents available show dates
-    printf "show_dates:%s" "$count"
+  if [[ -n "$shows" ]]; then
+    printf "shows:%s" "$shows"
     return 0
   fi
 
-  # Fallback: if no show dates found, return a marker
-  printf "show_dates:0"
+  # Fallback: if no shows found, return a marker
+  printf "shows:none"
 }
 
+# Collect changes for batched notification
+CHANGES=()
+
 for url in "${URLS[@]}"; do
-  # Safe filename from URL
   key="$(printf "%s" "$url" | /usr/bin/shasum -a 256 | awk '{print $1}')"
   hash_file="$STATE_DIR/$key.hash"
 
@@ -88,22 +75,39 @@ for url in "${URLS[@]}"; do
 
     if [[ -z "$old_hash" ]]; then
       # first run: initialise quietly (no alert)
-      echo "$(date '+%Y-%m-%d %H:%M:%S') INIT $url [$(printf "%s" "$payload" | cut -d: -f2) shows]" >> "$LOGFILE"
+      show_count="$(printf "%s" "$payload" | cut -d: -f2- | tr '|' '\n' | grep -v '^$' | wc -l | tr -d ' ')"
+      echo "$(date '+%Y-%m-%d %H:%M:%S') INIT $url [$show_count unique shows]" >> "$LOGFILE"
       continue
     fi
 
     if [[ -z "$html" ]]; then
       echo "$(date '+%Y-%m-%d %H:%M:%S') FETCH_FAIL $url" >> "$LOGFILE"
-      notify_imessage "Gesher watcher: fetch failed for ${url}"
+      CHANGES+=("FETCH_FAIL: ${url}")
     else
-      # Extract new count for the notification
-      new_count="$(printf "%s" "$payload" | cut -d: -f2)"
+      # Count shows
+      show_list="$(printf "%s" "$payload" | cut -d: -f2-)"
+      show_count="$(printf "%s" "$show_list" | tr '|' '\n' | grep -v '^$' | wc -l | tr -d ' ')"
 
-      # Extract month from URL for clearer notification
+      # Extract month and year from URL
       month="$(printf "%s" "$url" | grep -o 'Month=[0-9]\+' | cut -d= -f2)"
+      year="$(printf "%s" "$url" | grep -o 'Year=[0-9]\+' | cut -d= -f2)"
 
-      echo "$(date '+%Y-%m-%d %H:%M:%S') CHANGE Month=$month now has $new_count show dates" >> "$LOGFILE"
-      notify_imessage "Gesher: Month $month schedule updated - now $new_count show dates available"
+      echo "$(date '+%Y-%m-%d %H:%M:%S') CHANGE Month=$month Year=$year: now $show_count shows" >> "$LOGFILE"
+      CHANGES+=("$month/$year: $show_count shows")
     fi
   fi
 done
+
+# Send batched notification if there were any changes
+if [[ ${#CHANGES[@]} -gt 0 ]]; then
+  if [[ ${#CHANGES[@]} -eq 1 ]]; then
+    notify_imessage "Gesher: ${CHANGES[0]}"
+  else
+    # Multiple changes - send summary
+    msg="Gesher: ${#CHANGES[@]} schedules updated:"
+    for change in "${CHANGES[@]}"; do
+      msg="${msg}\n- ${change}"
+    done
+    notify_imessage "${msg}"
+  fi
+fi
