@@ -10,8 +10,8 @@ A cron-based monitoring script for Gesher Theater's show calendar. Tracks when n
 ## Installation
 1. Copy the script to your local bin directory:
    ```bash
-   cp gesher_watch_multi.sh ~/bin/
-   chmod +x ~/bin/gesher_watch_multi.sh
+   cp gesher_theater_watch.sh ~/bin/
+   chmod +x ~/bin/gesher_theater_watch.sh
    ```
 
 2. Set up cron job to run every 6 hours:
@@ -21,12 +21,12 @@ A cron-based monitoring script for Gesher Theater's show calendar. Tracks when n
    
    Add this line:
    ```
-   0 */6 * * * /bin/bash $HOME/bin/gesher_watch_multi.sh >> $HOME/Library/Logs/gesher_watch_multi.log 2>&1
+   0 */8 * * * /bin/bash $HOME/bin/gesher_theater_watch.sh >> $HOME/Library/Logs/gesher_theater_watch.log 2>&1
    ```
 
 3. Test the script manually first:
    ```bash
-   ~/bin/gesher_watch_multi.sh
+   ~/bin/gesher_theater_watch.sh
    ```
 
    The first run will initialize (no notifications). Subsequent runs will notify on changes.
@@ -37,11 +37,11 @@ A cron-based monitoring script for Gesher Theater's show calendar. Tracks when n
 2. Counts show date entries using pattern matching
 3. Compares count with previous run (stored as hash)
 4. Sends iMessage notification if count changed
-5. Logs all activity to `~/Library/Logs/gesher_watch_multi.log`
+5. Logs all activity to `~/Library/Logs/gesher_theater_watch.log`
 
 ## Logs
 
 View logs:
 ```bash
-tail -f ~/Library/Logs/gesher_watch_multi.log
+tail -f ~/Library/Logs/gesher_theater_watch.log
 ```
